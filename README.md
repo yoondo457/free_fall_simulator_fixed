@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>자유낙하 가상실험 (물리법칙 정확 반영)</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    canvas { border: 1px solid #ccc; margin-bottom: 10px; background: #f9f9f9; }
+    #container { display: flex; }
+    #settings { margin-left: 20px; display: flex; flex-direction: column; }
+    label { margin: 5px 0; }
+    button { margin-top: 10px; }
+    .warning { color: red; font-weight: bold; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>자유낙하 가상실험 (물리법칙 정확 반영)</h1>
+  <div id="container">
+    <div>
+      <canvas id="simCanvas" width="400" height="400"></canvas>
+      <canvas id="posGraph" width="400" height="200"></canvas>
+      <canvas id="velGraph" width="400" height="200"></canvas>
+    </div>
+    <div id="settings">
+      <label>오렌지 공 질량 (kg): <input type="number" id="massOrange" value="2" min="0.1" step="0.1" /></label>
+      <label>블루 공 질량 (kg): <input type="number" id="massBlue" value="5" min="0.1" step="0.1" /></label>
+      <label>높이 (m): <input type="number" id="height" value="20" min="1" step="1" /></label>
+      <label><input type="checkbox" id="airResistance" checked /> 공기저항 포함</label>
+      <button onclick="startSimulation()">시작</button>
+      <div id="warning" class="warning"></div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("simCanvas");
+    const ctx = canvas.getContext("2d");
+    const posCtx = document.getElementById("posGraph").getContext("2d");
+    const velCtx = document.getElementById("velGraph").getContext("2d");
+
+    const g = 9.81;
+    const dt = 0.02;
+
+    let t = 0;
+    let maxTime;
+    let isRunning = false;
+
+    function createBall(mass, color) {
+      return {
+        mass: mass,
+        radiusM: 0.05,
+        y: 0,
+        v: 0,
+        a: 0,
+        color: color
+      };
+    }
+
+    let ballOrange, ballBlue;
+    let fallHeight;
+    let airResistance;
+
+    const dragCoefficient = 0.47;
+    const airDensity = 1.225;
+
+    let tHistory = [];
+    let yOrangeHistory = [], yBlueHistory = [];
+    let vOrangeHistory = [], vBlueHistory = [];
+
+    function startSimulation() {
+      const warningDiv = document.getElementById("warning");
+      warningDiv.textContent = "";
+
+      const mOrange = parseFloat(document.getElementById("massOrange").value);
+      const mBlue = parseFloat(document.getElementById("massBlue").value);
+      fallHeight = parseFloat(document.getElementById("height").value);
+      airResistance = document.getElementById("airResistance").checked;
+
+      if (mOrange === mBlue) {
+        warningDiv.textContent = "⚠ 두 공의 질량이 같으면 낙하 속도 차이가 줄어듭니다.";
+      }
+
+      if (fallHeight < 100 && airResistance) {
+        alert("높이 값이 너무 낮으면 공기저항을 포함할 때 사용자가 원하는 그림이나 그래프가 나오지 않을 수 있습니다.");
+      }
+
+      ballOrange = createBall(mOrange, "orange");
+      ballBlue = createBall(mBlue, "blue");
+
+      ballOrange.y = 0;
+      ballBlue.y = 0;
+      ballOrange.v = 0;
+      ballBlue.v = 0;
+
+      t = 0;
+
+      maxTime = Math.sqrt(2 * fallHeight / g) * 4;
+
+      tHistory = [];
+      yOrangeHistory = [];
+      yBlueHistory = [];
+      vOrangeHistory = [];
+      vBlueHistory = [];
+
+      isRunning = true;
+      requestAnimationFrame(loop);
+    }
+
+    function loop() {
+      if (!isRunning) return;
+
+      t += dt;
+
+      updateBall(ballOrange);
+      updateBall(ballBlue);
+
+      tHistory.push(t);
+      yOrangeHistory.push(ballOrange.y);
+      yBlueHistory.push(ballBlue.y);
+      vOrangeHistory.push(ballOrange.v);
+      vBlueHistory.push(ballBlue.v);
+
+      drawSimulation();
+      drawGraph(posCtx, tHistory, yOrangeHistory, yBlueHistory, fallHeight, "높이 (m)", "위치", ["orange", "blue"]);
+      drawGraph(velCtx, tHistory, vOrangeHistory, vBlueHistory, null, "속도 (m/s)", "속도", ["orange", "blue"]);
+
+      if (ballOrange.y < fallHeight || ballBlue.y < fallHeight) {
+        requestAnimationFrame(loop);
+      } else {
+        isRunning = false;
+      }
+    }
+
+    function updateBall(ball) {
+      if (airResistance) {
+        const area = Math.PI * ball.radiusM * ball.radiusM;
+        const vAbs = Math.abs(ball.v);
+        const dragForce = 0.5 * dragCoefficient * airDensity * area * vAbs * vAbs;
+        const dragAcc = dragForce / ball.mass;
+        ball.a = g - (ball.v > 0 ? dragAcc : -dragAcc);
+      } else {
+        ball.a = g;
+      }
+
+      ball.v += ball.a * dt;
+      ball.y += ball.v * dt;
+
+      if (ball.y > fallHeight) {
+        ball.y = fallHeight;
+        ball.v = 0;
+        ball.a = 0;
+      }
+    }
+
+    function drawGraph(ctx, tData, yData1, yData2, yMax, yLabel, graphTitle, colors) {
+      const width = ctx.canvas.width;
+      const height = ctx.canvas.height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      const marginLeft = 50;
+      const marginBottom = 30;
+      const marginTop = 30;
+      const marginRight = 20;
+
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(marginLeft, marginTop);
+      ctx.lineTo(marginLeft, height - marginBottom);
+      ctx.lineTo(width - marginRight, height - marginBottom);
+      ctx.stroke();
+
+      const xMax = tData[tData.length - 1] || 1;
+
+      if (!yMax) {
+        yMax = Math.max(...yData1, ...yData2) * 1.1;
+        if (yMax < 5) yMax = 5;
+      }
+
+      ctx.fillStyle = "#000";
+      ctx.font = "12px Arial";
+      ctx.textAlign = "center";
+
+      const xTickCount = 5;
+      for (let i = 0; i <= xTickCount; i++) {
+        const x = marginLeft + (width - marginLeft - marginRight) * (i / xTickCount);
+        const tVal = (xMax * i / xTickCount).toFixed(1);
+        ctx.fillText(tVal + " s", x, height - 10);
+        ctx.strokeStyle = "#ccc";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, marginTop);
+        ctx.lineTo(x, height - marginBottom);
+        ctx.stroke();
+      }
+
+      ctx.textAlign = "right";
+      const yTickCount = 5;
+      for (let i = 0; i <= yTickCount; i++) {
+        const y = height - marginBottom - (height - marginTop - marginBottom) * (i / yTickCount);
+        const yVal = (yMax * i / yTickCount).toFixed(1);
+        ctx.fillText(yVal, marginLeft - 5, y + 4);
+        ctx.strokeStyle = "#ccc";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(marginLeft, y);
+        ctx.lineTo(width - marginRight, y);
+        ctx.stroke();
+      }
+
+      ctx.textAlign = "center";
+      ctx.fillText(graphTitle, width / 2, marginTop - 10);
+      ctx.fillText("시간 (s)", width / 2, height - 5);
+      ctx.save();
+      ctx.translate(15, height / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(yLabel, 0, 0);
+      ctx.restore();
+
+      function drawLine(data, color) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < data.length; i++) {
+          const px = marginLeft + (width - marginLeft - marginRight) * (tData[i] / xMax);
+          const py = height - marginBottom - (data[i] / yMax) * (height - marginTop - marginBottom);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+
+      drawLine(yData1, colors[0]);
+      drawLine(yData2, colors[1]);
+    }
+
+    function drawSimulation() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const yOrangeCanvas = (ballOrange.y / fallHeight) * canvas.height;
+      const yBlueCanvas = (ballBlue.y / fallHeight) * canvas.height;
+
+      ctx.beginPath();
+      ctx.fillStyle = ballOrange.color;
+      ctx.arc(100, yOrangeCanvas, ballOrange.radiusM * 1000, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = ballBlue.color;
+      ctx.arc(300, yBlueCanvas, ballBlue.radiusM * 1000, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#333";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(50, canvas.height);
+      ctx.lineTo(canvas.width - 50, canvas.height);
+      ctx.stroke();
+
+      ctx.fillStyle = "#000";
+      ctx.font = "16px Arial";
+      ctx.fillText(`시간: ${t.toFixed(2)} s`, 10, 20);
+      ctx.fillText(`오렌지 공 높이: ${(fallHeight - ballOrange.y).toFixed(2)} m`, 10, 40);
+      ctx.fillText(`블루 공 높이: ${(fallHeight - ballBlue.y).toFixed(2)} m`, 10, 60);
+    }
+  </script>
+</body>
+</html>
